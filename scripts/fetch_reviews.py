@@ -15,10 +15,13 @@ import hashlib
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
 import requests
+
+MARKDOWN_CAP = 5000  # chars per page (was 8000) — halves Claude's input tokens
 
 # ---------------------------------------------------------------------------
 # Brand config — update slugs if URLs change
@@ -210,13 +213,73 @@ def fetch_page_markdown(query: str, token: str, *, use_browser: bool = False) ->
 # Main
 # ---------------------------------------------------------------------------
 
-def _record(coverage: list, brand_key: str, brand_name: str, platform: str,
-            status: str, **kw) -> None:
-    """Append a coverage record. status: 'ok' | 'empty' | 'error' | 'not_configured'."""
-    coverage.append({
-        "brand": brand_key, "brand_name": brand_name, "platform": platform,
-        "status": status, **kw,
-    })
+def _cov(brand_key: str, brand_name: str, platform: str, status: str, **kw) -> dict:
+    """Build a coverage record. status: 'ok' | 'empty' | 'error' | 'not_configured'."""
+    return {"brand": brand_key, "brand_name": brand_name, "platform": platform,
+            "status": status, **kw}
+
+
+def _markdown_result(brand_key: str, brand_name: str, platform: str,
+                     url: str, markdown: str) -> tuple[list, dict]:
+    """Convert raw markdown into (reviews, coverage). Empty/404 → no review."""
+    if not markdown:
+        return [], _cov(brand_key, brand_name, platform, "error",
+                        error="empty_response", url=url)
+    head = markdown[:500]
+    if "Page not found" in head or "Error 404" in head:
+        return [], _cov(brand_key, brand_name, platform, "empty",
+                        reason="not_listed", url=url)
+    review = {"brand": brand_key, "brand_name": brand_name, "platform": platform,
+              "format": "markdown_page", "markdown": markdown[:MARKDOWN_CAP], "url": url}
+    return [review], _cov(brand_key, brand_name, platform, "ok", url=url)
+
+
+def _fetch_trustpilot(brand_key: str, brand: dict, token: str) -> tuple[list, dict]:
+    name = brand["name"]
+    domain = brand.get("trustpilot_domain")
+    if not domain:
+        return [], _cov(brand_key, name, "trustpilot", "not_configured")
+    try:
+        reviews = fetch_trustpilot_reviews(domain, token)
+        for r in reviews:
+            r["brand"] = brand_key
+            r["brand_name"] = name
+        return reviews, _cov(brand_key, name, "trustpilot",
+                             "ok" if reviews else "empty", count=len(reviews))
+    except Exception as e:
+        print(f"WARN trustpilot/{brand_key}: {e}", file=sys.stderr)
+        return [], _cov(brand_key, name, "trustpilot", "error", error=str(e)[:200])
+
+
+def _fetch_askgamblers(brand_key: str, brand: dict, token: str) -> tuple[list, dict]:
+    name = brand["name"]
+    slug = brand.get("askgamblers_slug")
+    if not slug:
+        return [], _cov(brand_key, name, "askgamblers", "not_configured")
+    url = f"https://www.askgamblers.com/online-casinos/reviews/{slug}"
+    try:
+        # AskGamblers blocks raw-http (Cloudflare); browser-playwright passes the JS challenge
+        markdown = fetch_page_markdown(url, token, use_browser=True)
+        return _markdown_result(brand_key, name, "askgamblers", url, markdown)
+    except Exception as e:
+        print(f"WARN askgamblers/{brand_key}: {e}", file=sys.stderr)
+        return [], _cov(brand_key, name, "askgamblers", "error",
+                        error=str(e)[:200], url=url)
+
+
+def _fetch_casinoguru(brand_key: str, brand: dict, token: str) -> tuple[list, dict]:
+    name = brand["name"]
+    slug = brand.get("casinoguru_slug")
+    if not slug:
+        return [], _cov(brand_key, name, "casinoguru", "not_configured")
+    url = f"https://casino.guru/{slug}"
+    try:
+        markdown = fetch_page_markdown(url, token)
+        return _markdown_result(brand_key, name, "casinoguru", url, markdown)
+    except Exception as e:
+        print(f"WARN casinoguru/{brand_key}: {e}", file=sys.stderr)
+        return [], _cov(brand_key, name, "casinoguru", "error",
+                        error=str(e)[:200], url=url)
 
 
 def main() -> None:
@@ -232,81 +295,24 @@ def main() -> None:
             return
 
         token = os.environ["APIFY_API_TOKEN"]
+
+        # Build 9 tasks (3 brands × 3 platforms) and run in parallel.
+        # Without parallelism this would be ~3 min (AskGamblers Playwright is slow).
+        # With parallelism it's bounded by the slowest single call (~60s).
+        tasks = []
+        for brand_key, brand in BRANDS.items():
+            tasks.append((_fetch_trustpilot, brand_key, brand))
+            tasks.append((_fetch_askgamblers, brand_key, brand))
+            tasks.append((_fetch_casinoguru, brand_key, brand))
+
         all_reviews: list[dict] = []
         coverage: list[dict] = []
-
-        for brand_key, brand in BRANDS.items():
-            name = brand["name"]
-
-            # --- Trustpilot (structured JSON) ---
-            if brand.get("trustpilot_domain"):
-                try:
-                    reviews = fetch_trustpilot_reviews(brand["trustpilot_domain"], token)
-                    for r in reviews:
-                        r["brand"] = brand_key
-                        r["brand_name"] = name
-                        all_reviews.append(r)
-                    _record(coverage, brand_key, name, "trustpilot",
-                            "ok" if reviews else "empty", count=len(reviews))
-                except Exception as e:
-                    print(f"WARN trustpilot/{brand_key}: {e}", file=sys.stderr)
-                    _record(coverage, brand_key, name, "trustpilot",
-                            "error", error=str(e)[:200])
-            else:
-                _record(coverage, brand_key, name, "trustpilot", "not_configured")
-
-            # --- AskGamblers (use Playwright to bypass Cloudflare) ---
-            if brand.get("askgamblers_slug"):
-                ag_url = f"https://www.askgamblers.com/online-casinos/reviews/{brand['askgamblers_slug']}"
-                try:
-                    # AskGamblers blocks raw-http (Cloudflare); browser-playwright passes the JS challenge
-                    markdown = fetch_page_markdown(ag_url, token, use_browser=True)
-                    if not markdown:
-                        _record(coverage, brand_key, name, "askgamblers",
-                                "error", error="empty_response", url=ag_url)
-                    elif "Page not found" in markdown[:500] or "404" in markdown[:200]:
-                        _record(coverage, brand_key, name, "askgamblers",
-                                "empty", reason="not_listed", url=ag_url)
-                    else:
-                        all_reviews.append({
-                            "brand": brand_key, "brand_name": name,
-                            "platform": "askgamblers", "format": "markdown_page",
-                            "markdown": markdown[:8000], "url": ag_url,
-                        })
-                        _record(coverage, brand_key, name, "askgamblers",
-                                "ok", url=ag_url)
-                except Exception as e:
-                    print(f"WARN askgamblers/{brand_key}: {e}", file=sys.stderr)
-                    _record(coverage, brand_key, name, "askgamblers",
-                            "error", error=str(e)[:200], url=ag_url)
-            else:
-                _record(coverage, brand_key, name, "askgamblers", "not_configured")
-
-            # --- CasinoGuru (markdown — Claude will parse in Routine) ---
-            if brand.get("casinoguru_slug"):
-                cg_url = f"https://casino.guru/{brand['casinoguru_slug']}"
-                try:
-                    markdown = fetch_page_markdown(cg_url, token)
-                    if not markdown:
-                        _record(coverage, brand_key, name, "casinoguru",
-                                "error", error="empty_response", url=cg_url)
-                    elif "Page not found" in markdown[:500] or "Error 404" in markdown[:500]:
-                        _record(coverage, brand_key, name, "casinoguru",
-                                "empty", reason="not_listed", url=cg_url)
-                    else:
-                        all_reviews.append({
-                            "brand": brand_key, "brand_name": name,
-                            "platform": "casinoguru", "format": "markdown_page",
-                            "markdown": markdown[:8000], "url": cg_url,
-                        })
-                        _record(coverage, brand_key, name, "casinoguru",
-                                "ok", url=cg_url)
-                except Exception as e:
-                    print(f"WARN casinoguru/{brand_key}: {e}", file=sys.stderr)
-                    _record(coverage, brand_key, name, "casinoguru",
-                            "error", error=str(e)[:200], url=cg_url)
-            else:
-                _record(coverage, brand_key, name, "casinoguru", "not_configured")
+        with ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+            futures = [ex.submit(fn, bk, b, token) for fn, bk, b in tasks]
+            for f in futures:
+                reviews, cov = f.result()
+                all_reviews.extend(reviews)
+                coverage.append(cov)
 
         print(json.dumps({"reviews": all_reviews, "coverage": coverage}))
 
