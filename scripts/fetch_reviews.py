@@ -205,64 +205,105 @@ def fetch_page_markdown(url: str, token: str) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+def _record(coverage: list, brand_key: str, brand_name: str, platform: str,
+            status: str, **kw) -> None:
+    """Append a coverage record. status: 'ok' | 'empty' | 'error' | 'not_configured'."""
+    coverage.append({
+        "brand": brand_key, "brand_name": brand_name, "platform": platform,
+        "status": status, **kw,
+    })
+
+
 def main() -> None:
     try:
         if os.environ.get("REVIEWS_MOCK") == "true":
-            print(json.dumps(get_mock_data()))
+            mock_reviews = get_mock_data()
+            mock_coverage = [
+                {"brand": r["brand"], "brand_name": r["brand_name"],
+                 "platform": r["platform"], "status": "ok", "count": 1}
+                for r in mock_reviews
+            ]
+            print(json.dumps({"reviews": mock_reviews, "coverage": mock_coverage}))
             return
 
         token = os.environ["APIFY_API_TOKEN"]
         all_reviews: list[dict] = []
+        coverage: list[dict] = []
 
         for brand_key, brand in BRANDS.items():
+            name = brand["name"]
+
             # --- Trustpilot (structured JSON) ---
             if brand.get("trustpilot_domain"):
                 try:
                     reviews = fetch_trustpilot_reviews(brand["trustpilot_domain"], token)
                     for r in reviews:
                         r["brand"] = brand_key
-                        r["brand_name"] = brand["name"]
+                        r["brand_name"] = name
                         all_reviews.append(r)
+                    _record(coverage, brand_key, name, "trustpilot",
+                            "ok" if reviews else "empty", count=len(reviews))
                 except Exception as e:
                     print(f"WARN trustpilot/{brand_key}: {e}", file=sys.stderr)
+                    _record(coverage, brand_key, name, "trustpilot",
+                            "error", error=str(e)[:200])
+            else:
+                _record(coverage, brand_key, name, "trustpilot", "not_configured")
 
             # --- AskGamblers (Google search query to bypass 403 on direct URLs) ---
             if brand.get("askgamblers_slug"):
+                ag_url = f"https://www.askgamblers.com/online-casinos/reviews/{brand['askgamblers_slug']}"
                 try:
-                    ag_url = f"https://www.askgamblers.com/online-casinos/reviews/{brand['askgamblers_slug']}"
-                    # Pass search query, not direct URL — direct AskGamblers URLs return 403
-                    ag_query = f"{brand['name']} reviews site:askgamblers.com"
+                    ag_query = f"{name} reviews site:askgamblers.com"
                     markdown = fetch_page_markdown(ag_query, token)
-                    if markdown and "Page not found" not in markdown[:500]:
+                    if not markdown:
+                        _record(coverage, brand_key, name, "askgamblers",
+                                "error", error="empty_response", url=ag_url)
+                    elif "Page not found" in markdown[:500] or "404" in markdown[:200]:
+                        _record(coverage, brand_key, name, "askgamblers",
+                                "empty", reason="not_listed", url=ag_url)
+                    else:
                         all_reviews.append({
-                            "brand": brand_key,
-                            "brand_name": brand["name"],
-                            "platform": "askgamblers",
-                            "format": "markdown_page",
-                            "markdown": markdown[:8000],  # cap to avoid token overflow
-                            "url": ag_url,
+                            "brand": brand_key, "brand_name": name,
+                            "platform": "askgamblers", "format": "markdown_page",
+                            "markdown": markdown[:8000], "url": ag_url,
                         })
+                        _record(coverage, brand_key, name, "askgamblers",
+                                "ok", url=ag_url)
                 except Exception as e:
                     print(f"WARN askgamblers/{brand_key}: {e}", file=sys.stderr)
+                    _record(coverage, brand_key, name, "askgamblers",
+                            "error", error=str(e)[:200], url=ag_url)
+            else:
+                _record(coverage, brand_key, name, "askgamblers", "not_configured")
 
             # --- CasinoGuru (markdown — Claude will parse in Routine) ---
             if brand.get("casinoguru_slug"):
+                cg_url = f"https://casino.guru/{brand['casinoguru_slug']}"
                 try:
-                    cg_url = f"https://casino.guru/{brand['casinoguru_slug']}"
                     markdown = fetch_page_markdown(cg_url, token)
-                    if markdown and "Page not found" not in markdown[:500]:
+                    if not markdown:
+                        _record(coverage, brand_key, name, "casinoguru",
+                                "error", error="empty_response", url=cg_url)
+                    elif "Page not found" in markdown[:500] or "Error 404" in markdown[:500]:
+                        _record(coverage, brand_key, name, "casinoguru",
+                                "empty", reason="not_listed", url=cg_url)
+                    else:
                         all_reviews.append({
-                            "brand": brand_key,
-                            "brand_name": brand["name"],
-                            "platform": "casinoguru",
-                            "format": "markdown_page",
-                            "markdown": markdown[:8000],
-                            "url": cg_url,
+                            "brand": brand_key, "brand_name": name,
+                            "platform": "casinoguru", "format": "markdown_page",
+                            "markdown": markdown[:8000], "url": cg_url,
                         })
+                        _record(coverage, brand_key, name, "casinoguru",
+                                "ok", url=cg_url)
                 except Exception as e:
                     print(f"WARN casinoguru/{brand_key}: {e}", file=sys.stderr)
+                    _record(coverage, brand_key, name, "casinoguru",
+                            "error", error=str(e)[:200], url=cg_url)
+            else:
+                _record(coverage, brand_key, name, "casinoguru", "not_configured")
 
-        print(json.dumps(all_reviews))
+        print(json.dumps({"reviews": all_reviews, "coverage": coverage}))
 
     except KeyError as e:
         print(f"ERROR: missing env var {e}", file=sys.stderr)

@@ -139,15 +139,25 @@ class TestMain:
         monkeypatch.setenv("REVIEWS_MOCK", "true")
         fetch_reviews.main()
         data = json.loads(capsys.readouterr().out)
-        assert isinstance(data, list)
-        assert len(data) > 0
+        assert isinstance(data, dict)
+        assert "reviews" in data
+        assert "coverage" in data
+        assert len(data["reviews"]) > 0
 
     def test_mock_mode_json_has_all_brands(self, capsys, monkeypatch):
         monkeypatch.setenv("REVIEWS_MOCK", "true")
         fetch_reviews.main()
         data = json.loads(capsys.readouterr().out)
-        brands = {r["brand"] for r in data}
+        brands = {r["brand"] for r in data["reviews"]}
         assert {"lucky_dreams", "rocket_play", "only_win"} <= brands
+
+    def test_mock_mode_coverage_has_status_field(self, capsys, monkeypatch):
+        monkeypatch.setenv("REVIEWS_MOCK", "true")
+        fetch_reviews.main()
+        data = json.loads(capsys.readouterr().out)
+        for c in data["coverage"]:
+            assert c["status"] in {"ok", "empty", "error", "not_configured"}
+            assert "brand" in c and "platform" in c
 
     def test_exits_with_1_on_missing_token(self, monkeypatch):
         monkeypatch.delenv("REVIEWS_MOCK", raising=False)
