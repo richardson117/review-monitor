@@ -21,7 +21,9 @@ from pathlib import Path
 
 import requests
 
-MARKDOWN_CAP = 5000  # chars per page (was 8000) — halves Claude's input tokens
+MARKDOWN_CAP = 12000  # chars per page — AskGamblers/CasinoGuru have heavy chrome
+                      # (cookie banner, hero, badges) before reviews. 5000 was too tight,
+                      # 12000 reliably reaches the review section. ~3-4k tokens per page.
 
 # ---------------------------------------------------------------------------
 # Brand config — update slugs if URLs change
