@@ -34,7 +34,7 @@ BRANDS = {
         "name": "Lucky Dreams Casino",
         "trustpilot_domain": "luckydreams.com",
         "askgamblers_slug": "lucky-dreams-casino",
-        "casinoguru_slug": "lucky-dreams-casino-review",
+        "casinoguru_slug": "luckydreams-casino-review",  # no dash between "lucky" and "dreams"
     },
     "rocket_play": {
         "name": "RocketPlay Casino",
@@ -227,8 +227,10 @@ def _markdown_result(brand_key: str, brand_name: str, platform: str,
     if not markdown:
         return [], _cov(brand_key, brand_name, platform, "error",
                         error="empty_response", url=url)
-    head = markdown[:500]
-    if "Page not found" in head or "Error 404" in head:
+    # Check ONLY the page title (first non-empty line) for 404 markers.
+    # Avoids false positives when "Page not found" appears in nav/link text.
+    title = next((ln for ln in markdown.splitlines() if ln.strip()), "")[:200]
+    if "Error 404" in title or "Page not found" in title:
         return [], _cov(brand_key, brand_name, platform, "empty",
                         reason="not_listed", url=url)
     review = {"brand": brand_key, "brand_name": brand_name, "platform": platform,

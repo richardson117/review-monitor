@@ -68,7 +68,7 @@ All 18 tests must be green before any commit.
 
 | Brand key | Trustpilot domain | AskGamblers slug | CasinoGuru slug |
 |---|---|---|---|
-| `lucky_dreams` | `luckydreams.com` | `lucky-dreams-casino` | `lucky-dreams-casino-review` |
+| `lucky_dreams` | `luckydreams.com` | `lucky-dreams-casino` | `luckydreams-casino-review` |
 | `rocket_play` | `rocketplay.com` | `rocketplay-casino` | `rocketplay-casino-review` |
 | `only_win` | `onlywinss.com` | `onlywin-casino` | `onlywin-casino-review` |
 
