@@ -190,14 +190,19 @@ def fetch_trustpilot_reviews(domain: str, token: str, limit: int = 20) -> list[d
     return [normalize_trustpilot(item) for item in items]
 
 
-def fetch_page_markdown(url: str, token: str) -> str:
-    """Fetch a review page via rag-web-browser and return its markdown."""
-    items = apify_run(
-        "apify/rag-web-browser",
-        {"query": url},
-        token,
-        timeout=90,
-    )
+def fetch_page_markdown(query: str, token: str, *, use_browser: bool = False) -> str:
+    """Fetch a page via rag-web-browser and return its markdown.
+
+    Set use_browser=True to use Playwright (slower ~30-60s but bypasses
+    Cloudflare/anti-bot — required for AskGamblers).
+    """
+    input_data: dict = {"query": query}
+    timeout = 90
+    if use_browser:
+        input_data["scrapingTool"] = "browser-playwright"
+        input_data["dynamicContentWaitSecs"] = 10
+        timeout = 180
+    items = apify_run("apify/rag-web-browser", input_data, token, timeout=timeout)
     return items[0].get("markdown", "") if items else ""
 
 
@@ -250,12 +255,12 @@ def main() -> None:
             else:
                 _record(coverage, brand_key, name, "trustpilot", "not_configured")
 
-            # --- AskGamblers (Google search query to bypass 403 on direct URLs) ---
+            # --- AskGamblers (use Playwright to bypass Cloudflare) ---
             if brand.get("askgamblers_slug"):
                 ag_url = f"https://www.askgamblers.com/online-casinos/reviews/{brand['askgamblers_slug']}"
                 try:
-                    ag_query = f"{name} reviews site:askgamblers.com"
-                    markdown = fetch_page_markdown(ag_query, token)
+                    # AskGamblers blocks raw-http (Cloudflare); browser-playwright passes the JS challenge
+                    markdown = fetch_page_markdown(ag_url, token, use_browser=True)
                     if not markdown:
                         _record(coverage, brand_key, name, "askgamblers",
                                 "error", error="empty_response", url=ag_url)

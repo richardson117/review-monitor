@@ -1,6 +1,16 @@
 # Routine Prompt
 
-Copy everything **between the `---` markers below** into the Instructions field when creating the Routine in `claude.ai/code/routines`.
+## ⚡ TL;DR — what to paste into Routine "Instructions" field
+
+```
+Read ROUTINE_PROMPT.md from the repo root and execute the workflow described there. Send the final Slack message via curl to $SLACK_WEBHOOK_URL. On any failure, send the fallback message described in step 6.
+```
+
+That's it. **One sentence.** Claude reads this file at runtime — you never have to paste the long workflow into the UI. To change behavior, edit this file → `git push` → next Routine run uses new logic.
+
+---
+
+## Full workflow (Claude reads this on every run)
 
 ---
 

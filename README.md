@@ -72,7 +72,11 @@ Go to **claude.ai/code/routines** → **New routine**:
 - **Repository:** select your forked repo (`<your-username>/review-monitor`)
 - **Environment:** `review-monitor-env`
 - **Trigger:** Schedule → Daily → 09:00 (your local time)
-- **Prompt:** copy the entire content of [`ROUTINE_PROMPT.md`](./ROUTINE_PROMPT.md) into the Prompt field
+- **Instructions:** paste this **one line**:
+  ```
+  Read ROUTINE_PROMPT.md from the repo root and execute the workflow described there. Send the final Slack message via curl to $SLACK_WEBHOOK_URL.
+  ```
+  Claude will read [`ROUTINE_PROMPT.md`](./ROUTINE_PROMPT.md) at runtime — no need to paste the long workflow into the UI. Update the workflow by editing that file + `git push`.
 
 ### 5. Test it
 

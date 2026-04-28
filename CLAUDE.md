@@ -48,12 +48,13 @@ All 17 tests must be green before any commit.
 - Output fields: `reviewId`, `reviewerName`, `publishedDate`, `rating` (int), `title`, `text`, `reviewUrl`
 
 ### AskGamblers
-- **Actor**: `apify/rag-web-browser`
-- **IMPORTANT**: Pass a Google Search query, NOT the direct URL
-  - Direct URLs return 403 (anti-scraping)
-  - Use query: `"lucky dreams casino site:askgamblers.com"` → Google finds the correct page → HTTP 200
-- **Input**: `{"query": "lucky dreams casino site:askgamblers.com", "maxResults": 1}`
-- Returns markdown with reviews + complaint count + scores; Claude parses at Routine time
+- **Actor**: `apify/rag-web-browser` with `scrapingTool: "browser-playwright"`
+- **IMPORTANT**: AskGamblers is behind Cloudflare. Default `raw-http` returns 403.
+  - Solution: switch to Playwright (real Chromium) which passes the JS challenge → HTTP 200
+  - Slower (~30-60s per page) but reliable
+- **Direct URL works fine** with Playwright, no need for Google search workaround
+- **Input**: `{"query": "https://www.askgamblers.com/online-casinos/reviews/<slug>", "scrapingTool": "browser-playwright", "dynamicContentWaitSecs": 10}`
+- In `fetch_reviews.py`: call `fetch_page_markdown(url, token, use_browser=True)`
 
 ### CasinoGuru
 - **Actor**: `apify/rag-web-browser`
