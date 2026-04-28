@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.local
+*.env
+
+# Data (runtime state, not source)
+data/last_run.json
+
+# IDE
+.vscode/
+.idea/
