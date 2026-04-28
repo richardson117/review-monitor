@@ -130,7 +130,7 @@ python scripts/fetch_reviews.py
 pytest tests/ -v
 ```
 
-All 17 tests must stay green. They run in ~1 second and don't hit any external API.
+All 18 tests must stay green. They run in ~1 second and don't hit any external API.
 
 ---
 
@@ -169,7 +169,7 @@ review-monitor/
 ├── tests/
 │   ├── conftest.py
 │   ├── __init__.py
-│   └── test_fetch_reviews.py    # 17 tests, run before any commit
+│   └── test_fetch_reviews.py    # 18 tests, run before any commit
 ├── .env.example                  # copy to .env for local dev
 ├── .gitignore
 ├── CLAUDE.md                     # instructions for the AI agent
@@ -181,11 +181,13 @@ review-monitor/
 
 ## Cost estimate
 
-- **Apify**: blackfalcondata Trustpilot is FREE; rag-web-browser ~$0.005/page → ~$0.04/run for 3 brands × 2 markdown pages
+- **Apify**: blackfalcondata Trustpilot is FREE; CasinoGuru (raw-http) ≈ negligible; AskGamblers (Playwright via Cloudflare bypass) is the main cost — ~0.05 CU per page
 - **Claude Routines**: included in your plan
 - **Slack**: free
 
-Daily run = **~$0.04**. Monthly = **~$1.20**. Free $5 Apify credit covers ~125 runs.
+Per daily run: ~6 markdown fetches × ~0.05 CU = ~0.3 CU. Monthly: ~10 CU. **Free $5 (≈250 CU) Apify credit covers ~25× this — ~2 years of daily runs.**
+
+Wall-clock time per run: ~60s (limited by AskGamblers Playwright; runs in parallel with TP+CG).
 
 ---
 

@@ -9,7 +9,7 @@ Usage:
     # Real mode:
     APIFY_API_TOKEN=your_token python scripts/fetch_reviews.py
 
-Outputs JSON list of reviews to stdout. Exits 1 on any error.
+Outputs a JSON object {reviews: [...], coverage: [...]} to stdout. Exits 1 on any error.
 """
 import hashlib
 import json

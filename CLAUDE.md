@@ -3,7 +3,7 @@
 # Review Monitor
 
 Fetches recent reviews for casino brands from Trustpilot, AskGamblers, and CasinoGuru via Apify.
-Outputs a unified JSON list for Claude to analyse → Slack digest.
+Outputs a JSON object `{reviews: [...], coverage: [...]}` for Claude to analyse → Slack digest.
 
 ## Env vars
 
@@ -33,7 +33,7 @@ python scripts/fetch_reviews.py
 pytest tests/ -v
 ```
 
-All 17 tests must be green before any commit.
+All 18 tests must be green before any commit.
 
 ---
 
